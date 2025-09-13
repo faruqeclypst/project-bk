@@ -55,13 +55,15 @@ export default function Teacher() {
       if (existing && existing.trim().length > 0) return existing
     } catch {}
 
-    // Generate random username using the package
+    // Generate random username with 2-digit number
     const randomName = generate()
+    const randomNumber = Math.floor(Math.random() * 100).toString().padStart(2, '0')
+    const formattedName = `${randomName}-${randomNumber}`
     
     try {
-      localStorage.setItem(storageKey, randomName)
+      localStorage.setItem(storageKey, formattedName)
     } catch {}
-    return randomName
+    return formattedName
   }
 
   const [email, setEmail] = useState('')
@@ -76,7 +78,75 @@ export default function Teacher() {
   const [input, setInput] = useState('')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([])
-  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('unreadCounts')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  // Function to update unread counts and save to localStorage
+  const updateUnreadCounts = (newCounts: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => {
+    setUnreadCounts(newCounts)
+    try {
+      const counts = typeof newCounts === 'function' ? newCounts(unreadCounts) : newCounts
+      localStorage.setItem('unreadCounts', JSON.stringify(counts))
+    } catch {}
+  }
+
+  // Function to calculate unread counts for all conversations
+  const calculateUnreadCounts = async (conversations: Conversation[], currentConversationId?: string) => {
+    const counts: Record<string, number> = {}
+    
+    for (const conv of conversations) {
+      if (conv.id === currentConversationId) {
+        counts[conv.id] = 0 // Current conversation is considered read
+        continue
+      }
+      
+      try {
+        // Get the last message in this conversation
+        const lastMessage = await pb.collection('messages').getFirstListItem<Message>(
+          `conversationId = "${conv.id}"`,
+          { sort: '-created' }
+        )
+        
+        // If the last message is from student, count it as unread
+        if (lastMessage.sender === 'student') {
+          // Get all unread messages (messages from student after the last teacher message)
+          const teacherMessages = await pb.collection('messages').getFullList<Message>({
+            filter: `conversationId = "${conv.id}" && sender = "teacher"`,
+            sort: '-created',
+            limit: 1
+          })
+          
+          if (teacherMessages.length === 0) {
+            // No teacher messages, count all student messages
+            const studentMessages = await pb.collection('messages').getFullList<Message>({
+              filter: `conversationId = "${conv.id}" && sender = "student"`
+            })
+            counts[conv.id] = studentMessages.length
+          } else {
+            // Count student messages after the last teacher message
+            const lastTeacherMessage = teacherMessages[0]
+            const unreadMessages = await pb.collection('messages').getFullList<Message>({
+              filter: `conversationId = "${conv.id}" && sender = "student" && created > "${lastTeacherMessage.created}"`
+            })
+            counts[conv.id] = unreadMessages.length
+          }
+        } else {
+          counts[conv.id] = 0
+        }
+      } catch (error) {
+        // If no messages found, set count to 0
+        counts[conv.id] = 0
+      }
+    }
+    
+    return counts
+  }
   const [searchQuery, setSearchQuery] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active')
@@ -141,6 +211,16 @@ export default function Teacher() {
     const t = setInterval(() => setNowTs(Date.now()), 30000)
     return () => clearInterval(t)
   }, [])
+
+  // Format waktu Indonesia
+  function formatIndonesiaTime(date: Date): string {
+    return date.toLocaleTimeString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })
+  }
 
   const lastStudentMsgAt = useMemo(() => {
     if (!conversation) return null
@@ -283,7 +363,8 @@ export default function Teacher() {
       messageUnsubRef.current = convUnsub
     }
     
-    setUnreadCounts(prev => ({ ...prev, [conv.id]: 0 }))
+    // Reset notifikasi untuk percakapan yang sedang dibuka
+    updateUnreadCounts(prev => ({ ...prev, [conv.id]: 0 }))
   }
 
   async function sendTeacherMessage() {
@@ -396,6 +477,10 @@ export default function Teacher() {
       
       setConversations(updatedConversations)
 
+      // Calculate initial unread counts
+      const initialUnreadCounts = await calculateUnreadCounts(updatedConversations, conversation?.id)
+      updateUnreadCounts(initialUnreadCounts)
+
       const archivedList = await pb
         .collection('conversations')
         .getList<Conversation>(1, 100, {
@@ -468,8 +553,9 @@ export default function Teacher() {
         '*',
         (e: any) => {
           const rec = e.record as Message
+          // Hanya hitung pesan dari siswa yang belum dibaca
           if (rec.sender === 'student' && rec.conversationId !== conversation?.id) {
-            setUnreadCounts(prev => ({
+            updateUnreadCounts(prev => ({
               ...prev,
               [rec.conversationId]: (prev[rec.conversationId] || 0) + 1,
             }))
@@ -641,11 +727,14 @@ export default function Teacher() {
                           Anonim
                         </span>
                       ) : (
-                          c.studentCode && (
-                            <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-mono">
-                              {c.studentCode}
+                        <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px]">
+                          Nama
                         </span>
-                          )
+                      )}
+                      {c.studentCode && (
+                        <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                          {c.studentCode}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -818,7 +907,7 @@ export default function Teacher() {
                         }`}
                       >
                         <div>{m.content}</div>
-                        <div className="text-[10px] mt-1 opacity-70 text-right">{d.toLocaleTimeString()}</div>
+                        <div className="text-[10px] mt-1 opacity-70 text-right">{formatIndonesiaTime(d)}</div>
                       </div>
                     </div>
                   )

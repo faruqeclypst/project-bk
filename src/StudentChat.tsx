@@ -56,6 +56,16 @@ export default function StudentChat() {
     return () => clearInterval(t)
   }, [])
 
+  // Format waktu Indonesia
+  function formatIndonesiaTime(date: Date): string {
+    return date.toLocaleTimeString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })
+  }
+
   const lastTeacherMsgAt = useMemo(() => {
     if (!conversation) return null
     let latest: number | null = null
@@ -267,7 +277,7 @@ export default function StudentChat() {
         <div className="w-full max-w-md bg-white rounded-3xl shadow-lg p-6 space-y-6">
           <div className="text-center space-y-3">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-500 rounded-2xl mb-2 shadow-md">
-              <img src="/src/assets/logo.png" alt="Logo Sekolah" className="w-12 h-12 object-contain" />
+              <img src="/logo.png" alt="Logo Sekolah" className="w-12 h-12 object-contain" />
             </div>
             <div>
               <h1 className="text-sm font-medium text-emerald-600 uppercase tracking-wide">Bimbingan Konseling</h1>
@@ -345,8 +355,22 @@ export default function StudentChat() {
             onClick={() => startConversation(mode || 'anon')}
             disabled={!selectedTeacherId || (mode === 'named' && !studentName.trim()) || !mode}
           >
-            Mulai Konsultasi
+            {!mode ? 'Pilih Mode Terlebih Dahulu' : 'Mulai Konsultasi'}
           </button>
+          
+          {/* Notifikasi mode wajib */}
+          {!mode && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 bg-rose-100 rounded-full flex items-center justify-center">
+                  <span className="text-rose-600 text-xs font-bold">!</span>
+                </div>
+                <p className="text-sm text-rose-700 font-medium">
+                  Silakan pilih mode terlebih dahulu (Anonim atau Pakai Nama)
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Lanjutkan chat */}
           <div className="pt-4 border-t border-slate-100 space-y-2">
@@ -468,7 +492,7 @@ export default function StudentChat() {
                 >
                   <div>{m.content}</div>
                   <div className="text-[10px] mt-1 opacity-70 text-right">
-                    {d.toLocaleTimeString()}
+                    {formatIndonesiaTime(d)}
                   </div>
                 </div>
               </div>
