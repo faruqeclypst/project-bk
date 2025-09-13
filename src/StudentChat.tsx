@@ -39,6 +39,18 @@ export default function StudentChat() {
   const [resumeCode, setResumeCode] = useState('')
   const [resumeError, setResumeError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [newMessageInActiveChat, setNewMessageInActiveChat] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean
+    x: number
+    y: number
+    message: Message | null
+  }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    message: null
+  })
 
   // mode pilihan (anonim / pakai nama)
   const [mode, setMode] = useState<'anon' | 'named' | null>(null)
@@ -56,12 +68,62 @@ export default function StudentChat() {
     return () => clearInterval(t)
   }, [])
 
-  // Format waktu Indonesia
-  function formatIndonesiaTime(date: Date): string {
-    return date.toLocaleTimeString('id-ID', {
+
+  // Format waktu dengan hari dan tanggal untuk pesan lama
+  function formatMessageTime(date: Date): string {
+    const now = new Date()
+    const messageDate = new Date(date)
+    
+    // Set timezone ke Indonesia
+    const nowIndonesia = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Jakarta"}))
+    const messageIndonesia = new Date(messageDate.toLocaleString("en-US", {timeZone: "Asia/Jakarta"}))
+    
+    // Hitung perbedaan hari
+    const today = new Date(nowIndonesia.getFullYear(), nowIndonesia.getMonth(), nowIndonesia.getDate())
+    const messageDay = new Date(messageIndonesia.getFullYear(), messageIndonesia.getMonth(), messageIndonesia.getDate())
+    
+    const diffDays = Math.floor((today.getTime() - messageDay.getTime()) / (1000 * 60 * 60 * 24))
+    
+    if (diffDays === 0) {
+      // Hari ini - tampilkan "hari ini" dan jam
+      const time = messageIndonesia.toLocaleTimeString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      })
+      return `Hari ini, ${time}`
+    } else if (diffDays === 1) {
+      // Kemarin - tampilkan "Kemarin" dan jam
+      const time = messageIndonesia.toLocaleTimeString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      })
+      return `Kemarin, ${time}`
+    } else {
+      // Lebih dari kemarin - tampilkan tanggal
+      return messageIndonesia.toLocaleDateString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      })
+    }
+  }
+
+  // Format waktu lengkap untuk context menu
+  function formatFullTime(date: Date): string {
+    return date.toLocaleString('id-ID', {
       timeZone: 'Asia/Jakarta',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
       hour12: false
     })
   }
@@ -167,7 +229,16 @@ export default function StudentChat() {
         (e: any) => {
           const rec = e.record as Message
           if (rec.conversationId === conversation.id) {
-            setMessages(prev => [...prev, rec])
+            setMessages(prev => {
+              // Check if message already exists to prevent duplicates
+              const exists = prev.some(m => m.id === rec.id)
+              if (exists) return prev
+              return [...prev, rec]
+            })
+            // Tampilkan indikator pesan baru jika dari guru
+            if (rec.sender === 'teacher') {
+              setNewMessageInActiveChat(true)
+            }
           }
         },
         { filter: `conversationId = "${conversation.id}"` }
@@ -177,6 +248,34 @@ export default function StudentChat() {
       if (unsub) unsub()
     }
   }, [pb, conversation?.id])
+
+  // Reset indikator pesan baru ketika conversation berubah
+  useEffect(() => {
+    setNewMessageInActiveChat(false)
+  }, [conversation?.id])
+
+  // Handle context menu
+  function handleMessageContextMenu(e: React.MouseEvent, message: Message) {
+    e.preventDefault()
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      message
+    })
+  }
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside() {
+      setContextMenu(prev => ({ ...prev, visible: false }))
+    }
+
+    if (contextMenu.visible) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [contextMenu.visible])
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
@@ -273,8 +372,8 @@ export default function StudentChat() {
   // ============================
   if (!conversation) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-emerald-50 to-sky-50 p-6">
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-lg p-6 space-y-6">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-emerald-50 to-sky-50 p-4 md:p-6">
+        <div className="w-full max-w-md bg-white rounded-2xl md:rounded-3xl shadow-lg p-4 md:p-6 space-y-4 md:space-y-6">
           <div className="text-center space-y-3">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-500 rounded-2xl mb-2 shadow-md">
               <img src="/logo.png" alt="Logo Sekolah" className="w-12 h-12 object-contain" />
@@ -425,28 +524,28 @@ export default function StudentChat() {
   // ============================
   return (
     <div className="h-screen flex justify-center bg-slate-100">
-      <div className="flex w-full max-w-2xl bg-white rounded-xl shadow-lg overflow-hidden flex-col">
+      <div className="flex w-full max-w-2xl bg-white rounded-lg md:rounded-xl shadow-lg overflow-hidden flex-col">
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3 bg-white shadow-sm">
-          <div className="h-9 w-9 rounded-full flex items-center justify-center font-semibold bg-emerald-200 text-emerald-700">
+        <div className="flex items-center gap-2 md:gap-3 px-3 md:px-4 py-3 bg-white shadow-sm">
+          <div className="h-8 w-8 md:h-9 md:w-9 rounded-full flex items-center justify-center font-semibold bg-emerald-200 text-emerald-700 text-sm md:text-base">
             {(activeTeacher?.name || activeTeacher?.email || 'G').charAt(0).toUpperCase()}
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-slate-800 truncate max-w-[200px] block">
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className="text-xs md:text-sm font-semibold text-slate-800 truncate">
               {`Guru ${activeTeacher?.name || activeTeacher?.email || ''}`.trim() || 'Guru'}
             </span>
-            <span className="text-xs text-slate-500 flex items-center gap-2">
+            <span className="text-[10px] md:text-xs text-slate-500 flex items-center gap-1 md:gap-2">
               <span
-                className={`h-2 w-2 rounded-full ${
+                className={`h-1.5 w-1.5 md:h-2 md:w-2 rounded-full ${
                   isTeacherOnline ? 'bg-emerald-500' : 'bg-slate-400'
                 }`}
               />
               {isTeacherOnline ? 'Online' : 'Offline'}
             </span>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-1 md:gap-2">
             {studentCode && (
-              <div className="hidden sm:flex items-center gap-2 text-xs text-slate-600">
+              <div className="hidden md:flex items-center gap-2 text-xs text-slate-600">
                 <span className="text-slate-500">Simpan Kode Sesi</span>
                 <span className="font-mono bg-slate-100 px-2 py-0.5 rounded select-all">
                   {studentCode}
@@ -466,54 +565,59 @@ export default function StudentChat() {
             )}
             <button
               onClick={resetConversation}
-              className="p-2 rounded-full hover:bg-slate-100"
+              className="p-1.5 md:p-2 rounded-full hover:bg-slate-100"
               title="Kembali ke Home"
             >
-              <Home className="h-5 w-5 text-slate-700" />
+              <Home className="h-4 w-4 md:h-5 md:w-5 text-slate-700" />
             </button>
           </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 bg-slate-50" ref={listRef}>
-          {messages.map(m => {
+        <div className="flex-1 overflow-y-auto px-3 md:px-5 py-3 md:py-4 space-y-3 md:space-y-4 bg-slate-50" ref={listRef}>
+          {messages.map((m, index) => {
             const d = new Date(m.created)
+            const isNewMessage = index === messages.length - 1 && m.sender === 'teacher' && newMessageInActiveChat
             return (
               <div
                 key={m.id}
                 className={`flex ${m.sender === 'student' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`px-4 py-2 rounded-2xl max-w-[70%] ${
+                  className={`px-3 md:px-4 py-2 rounded-xl md:rounded-2xl max-w-[85%] md:max-w-[70%] relative ${
                     m.sender === 'student'
                       ? 'bg-emerald-600 text-white rounded-br-md'
                       : 'bg-white text-slate-800 rounded-bl-md shadow-sm'
-                  }`}
+                  } ${isNewMessage ? 'ring-2 ring-emerald-400 ring-opacity-50' : ''}`}
+                  onContextMenu={(e) => handleMessageContextMenu(e, m)}
                 >
-                  <div>{m.content}</div>
-                  <div className="text-[10px] mt-1 opacity-70 text-right">
-                    {formatIndonesiaTime(d)}
+                  <div className="text-sm md:text-base">{m.content}</div>
+                  <div className="text-[9px] md:text-[10px] mt-1 opacity-70 text-right">
+                    {formatMessageTime(d)}
                   </div>
+                  {isNewMessage && (
+                    <div className="absolute -top-1 -right-1 w-2.5 h-2.5 md:w-3 md:h-3 bg-emerald-500 rounded-full animate-pulse"></div>
+                  )}
                 </div>
               </div>
             )
           })}
           {messages.length === 0 && (
-            <div className="text-center text-slate-400 text-sm mt-10">Belum ada pesan</div>
+            <div className="text-center text-slate-400 text-xs md:text-sm mt-8 md:mt-10">Belum ada pesan</div>
           )}
         </div>
 
         {/* Input */}
-        <div className="p-4 bg-white shadow-sm">
-          <div className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-2">
-            <button className="p-2">
-              <Smile className="h-5 w-5 text-slate-600" />
+        <div className="p-3 md:p-4 bg-white shadow-sm">
+          <div className="flex items-center gap-1 md:gap-2 bg-slate-100 rounded-full px-2 md:px-3 py-2">
+            <button className="p-1.5 md:p-2">
+              <Smile className="h-4 w-4 md:h-5 md:w-5 text-slate-600" />
             </button>
-            <button className="p-2">
-              <Paperclip className="h-5 w-5 text-slate-600" />
+            <button className="p-1.5 md:p-2">
+              <Paperclip className="h-4 w-4 md:h-5 md:w-5 text-slate-600" />
             </button>
             <textarea
-              className="flex-1 bg-transparent resize-none px-2 text-sm focus:outline-none"
+              className="flex-1 bg-transparent resize-none px-1 md:px-2 text-xs md:text-sm focus:outline-none"
               rows={1}
               placeholder="Tulis pesan..."
               value={input}
@@ -528,18 +632,53 @@ export default function StudentChat() {
             <button
               onClick={sendMessage}
               disabled={!input.trim()}
-              className={`p-2 rounded-full ${
+              className={`p-1.5 md:p-2 rounded-full ${
                 input.trim()
                   ? 'bg-emerald-600 text-white'
                   : 'bg-slate-300 text-white cursor-not-allowed'
               }`}
               title={input.trim() ? 'Kirim' : 'Tulis pesan terlebih dahulu'}
             >
-              <Send className="h-5 w-5" />
+              <Send className="h-4 w-4 md:h-5 md:w-5" />
             </button>
           </div>
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu.visible && contextMenu.message && (
+        <div
+          className="fixed z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[200px]"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+        >
+          <div className="px-4 py-2 text-sm text-slate-600 border-b border-slate-100">
+            <div className="font-medium">Info Pesan</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {formatFullTime(new Date(contextMenu.message.created))}
+            </div>
+          </div>
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            onClick={() => {
+              navigator.clipboard.writeText(contextMenu.message!.content)
+              setContextMenu(prev => ({ ...prev, visible: false }))
+            }}
+          >
+            Salin Teks
+          </button>
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            onClick={() => {
+              setContextMenu(prev => ({ ...prev, visible: false }))
+            }}
+          >
+            Tutup
+          </button>
+        </div>
+      )}
     </div>
   )
 }
