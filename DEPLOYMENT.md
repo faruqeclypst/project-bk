@@ -25,6 +25,7 @@
      - **Name**: `VITE_PB_URL`
      - **Value**: `http://206.189.32.190:8090`
      - **Environment**: Production, Preview, Development
+   - Klik "Save" dan redeploy aplikasi
 
 4. **Deploy**:
    - Klik "Deploy"
