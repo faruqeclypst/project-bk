@@ -5,6 +5,6 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   define: {
-    'import.meta.env.VITE_PB_URL': JSON.stringify('http://206.189.32.190:8090')
+    'import.meta.env.VITE_PB_URL': JSON.stringify(process.env.VITE_PB_URL || 'http://206.189.32.190:8090')
   }
 })
